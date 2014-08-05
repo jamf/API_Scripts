@@ -37,8 +37,10 @@
 #
 # HISTORY
 #
-#	Version 1.0
-#  	Created by Sam Fortuna, JAMF Software, LLC, on June 18th, 2014
+#  	-Created by Sam Fortuna, JAMF Software, LLC, on June 18th, 2014
+#	-Updated by Sam Fortuna, JAMF Software, LLC, on August 5th, 2014
+#		-Improved error handling
+#		-Returns a list of failed submissions
 #
 ####################################################################################################
 
@@ -68,6 +70,7 @@ users=`echo "$data" | wc -l | awk '{print $NF}'`
 #Set a counter for the loop
 counter="0"
 
+duplicates=[]
 #Loop through the CSV and submit data to the API
 while [ $counter -lt $users ]
 do
@@ -76,11 +79,22 @@ do
 	user=`echo "$line" | awk -F , '{print $1}'`
 	email=`echo "$line" | awk -F , '{print $2}'`
 	
-	echo "$user : $email"
+	echo "Attempting to create user - $user : $email"
 	
 	#Construct the XML
 	apiData="<user><name>${user}</name><email>${email}</email></user>"
-	curl -k -v -u $username:$password -H "Content-Type: text/xml" https://$server:8443/JSSResource/users/id/id -d "$apiData" -X POST
+	output=`curl -k -u $username:$password -H "Content-Type: text/xml" https://$server:8443/JSSResource/users/id/id -d "$apiData" -X POST`
+
+	#Error Checking
+	error=""
+	error=`echo $output | grep "Conflict"`
+	echo "output: $output"
+	if [[ $error != "" ]]; then
+		duplicates+=($user)
+	fi
 done
+
+echo "The following users could not be created:"
+printf -- '%s\n' "${duplicates[@]}"
 
 exit 0
