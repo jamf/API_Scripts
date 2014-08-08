@@ -88,7 +88,6 @@ do
 	#Error Checking
 	error=""
 	error=`echo $output | grep "Conflict"`
-	echo "output: $output"
 	if [[ $error != "" ]]; then
 		duplicates+=($user)
 	fi
