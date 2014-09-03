@@ -37,7 +37,7 @@ class JSSUpdateMobileDeviceGroups:
 		
 	def getCSVData(self, csvPath):
 		# Read in CSV
-		csvinput = open(csvPath)
+		csvinput = open(csvPath, 'rU')
 		reader = csv.reader(csvinput)
 		return reader
 	
@@ -86,8 +86,9 @@ class JSSUpdateMobileDeviceGroups:
 	def createNewGroupElement(self, studentDeviceID, groupName):
 		global eventValues
 		newGroupAssignment = minidom.Document()
-		group = self.appendEmptyElement(newGroupAssignment, newGroupAssignment, "mobile_device_group")
-		self.appendNewTextElement(newGroupAssignment, group, "name", groupName)
+		group = self.appendEmptyElement(newGroupAssignment, newGroupAssignment, "mobile_device_group")
+		self.appendNewTextElement(newGroupAssignment, group, "is_smart", "false")
+		self.appendNewTextElement(newGroupAssignment, group, "name", groupName)
 		groupAdditions = self.appendEmptyElement(newGroupAssignment, group, "mobile_device_additions")
 		deviceElement = self.appendEmptyElement(newGroupAssignment, groupAdditions, "mobile_device")
 		self.appendNewTextElement(newGroupAssignment, deviceElement, "id", studentDeviceID)
@@ -161,8 +162,7 @@ class CasperGroupPUTHandler:
 					req.get_method = lambda: 'POST'
 				base64string = base64.encodestring('%s:%s' % (self.jssUser, self.jssPass))[:-1]
 				authheader = "Basic %s" % base64string
-				req.add_header("Authorization", authheader)
-				xmldata = urlopen(req)
+				req.add_header("Authorization", authheader)#				Debug log in line below#				print "POSTING TO: %s XML: %s" % (url, xmlout.toxml())				xmldata = urlopen(req)
 				if xmlout is None:
 					xmldoc = minidom.parse(xmldata)
 				else:
