@@ -41,6 +41,8 @@
 #	-Updated by Sam Fortuna, JAMF Software, LLC, on August 5th, 2014
 #		-Improved error handling
 #		-Returns a list of failed submissions
+#	-Updated by TJ Bauer, JAMF Software, LLC, on September 9th, 2014
+#		-Improved reading of file
 #
 ####################################################################################################
 
@@ -64,15 +66,12 @@ if [[ "$data" == "" ]]; then
 	exit 1
 fi
 
-#Find how many users to import
-users=`echo "$data" | wc -l | awk '{print $NF}'`
-
 #Set a counter for the loop
 counter="0"
 
 duplicates=[]
 #Loop through the CSV and submit data to the API
-while [ $counter -lt $users ]
+while read name
 do
 	counter=$[$counter+1]
 	line=`echo "$data" | head -n $counter | tail -n 1`
@@ -91,7 +90,7 @@ do
 	if [[ $error != "" ]]; then
 		duplicates+=($user)
 	fi
-done
+done < $file
 
 echo "The following users could not be created:"
 printf -- '%s\n' "${duplicates[@]}"
