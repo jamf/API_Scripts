@@ -82,7 +82,7 @@ do
 	
 	#Construct the XML
 	apiData="<user><name>${user}</name><email>${email}</email></user>"
-	output=`curl -k -u $username:$password -H "Content-Type: text/xml" https://$server:8443/JSSResource/users/id/id -d "$apiData" -X POST`
+	output=`curl -k -u $username:$password -H "Content-Type: text/xml" https://$server:8443/JSSResource/users/id/0 -d "$apiData" -X POST`
 
 	#Error Checking
 	error=""
