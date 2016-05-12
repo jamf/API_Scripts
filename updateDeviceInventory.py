@@ -52,10 +52,10 @@
 #
 # HISTORY
 #
-#    Version: 1.1
+#    Version: 1.2
 #
 #    - Created by Nick Amundsen on June 23, 2011
-#    - Updated by Bram Cohen on March 19, 2015
+#    - Updated by Bram Cohen on May 12, 2016
 #       Added TLSv1 and new JSON Response on 9.6+
 #
 #####################################################################################################
@@ -66,14 +66,13 @@
 #
 # HARDCODED VALUES SET HERE
 #
-jss_host = "" #Example: 127.0.0.1 if run on server
+jss_host = "127.0.0.1" #Example: 127.0.0.1 if run on server
 jss_port = 8443
 jss_path = "" #Example: "jss" for a JSS at https://www.company.com:8443/jss
-jss_username = ""
-jss_password = ""
+jss_username = "admin"
+jss_password = "jamf1234"
 
 ##DONT EDIT BELOW THIS LINE
-import sys 
 import json
 import httplib
 import base64
@@ -111,6 +110,28 @@ def grabDeviceIDs():
     print "Found " + str(len(devices)) + " devices."
     return devices
 
+class TLS1Connection(httplib.HTTPSConnection):
+    def __init__(self, host, **kwargs):
+        httplib.HTTPSConnection.__init__(self, host, **kwargs)
+
+    def connect(self):
+        sock = socket.create_connection((self.host, self.port), self.timeout, self.source_address)
+        if getattr(self, '_tunnel_host', None):
+            self.sock = sock
+            self._tunnel()
+
+        self.sock = ssl.wrap_socket(sock, self.key_file, self.cert_file, ssl_version=ssl.PROTOCOL_TLSv1)
+
+
+class TLS1Handler(urllib2.HTTPSHandler):
+    def __init__(self):
+        urllib2.HTTPSHandler.__init__(self)
+
+    def https_open(self, req):
+        return self.do_open(TLS1Connection, req)
+
+
+
 ##Create a header for the request
 def getAuthHeader(u,p):
     # Compute base64 representation of the authentication token.
@@ -120,16 +141,16 @@ def getAuthHeader(u,p):
 ##Download a list of all mobile devices from the JSS API
 def getDeviceListFromJSS():
     print "Getting device list from the JSS..."
-    print "Getting device list from:  https://" + str(jss_host) + ":" + str(jss_port) + str(jss_path)
-    headers = {"Authorization":getAuthHeader(jss_username,jss_password),"Accept":"application/json"}
+    opener = urllib2.build_opener(TLS1Handler())
+    
+    request = urllib2.Request("https://" + str(jss_host) + ":" + str(jss_port) + str(jss_path) + "/JSSResource/mobiledevices")
+    request.add_header("Authorization", "Basic " + base64.b64encode('%s:%s' % (jss_username,jss_password)))
+    request.add_header("Accept", "application/json")
+    request.get_method = lambda: 'GET'
+
     try:
-        conn = httplib.HTTPSConnection(jss_host,jss_port)
-        sock = socket.create_connection((conn.host, conn.port), conn.timeout, conn.source_address)
-        conn.sock = ssl.wrap_socket(sock, conn.key_file, conn.cert_file, ssl_version=ssl.PROTOCOL_TLSv1)
-        conn.request("GET",jss_path + "/JSSResource/mobiledevices",None,headers)
-        data = conn.getresponse().read()
-        conn.close()
-        return json.loads(data)
+        data = opener.open(request)
+        return json.load(data)
     except httplib.HTTPException as inst:
         print "Exception: %s" % inst
         sys.exit(1)
@@ -155,7 +176,7 @@ def submitDataToJSS(Device):
         #Write out the XML string with new data to be submitted
         newDataString = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?><mobile_device><command>UpdateInventory</command></mobile_device>"
         #print "Data Sent: " + newDataString
-        opener = urllib2.build_opener(urllib2.HTTPHandler)
+        opener = urllib2.build_opener(TLS1Handler())
         request = urllib2.Request(url,newDataString)
         request.add_header("Authorization", getAuthHeader(jss_username,jss_password))
         request.add_header('Content-Type', 'application/xml')
