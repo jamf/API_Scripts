@@ -30,7 +30,7 @@
 #
 # DESCRIPTION
 #
-#	This script deletes computer records from the JSS by their name based
+#	This script deletes computer records from the JSS by their ID based
 #	on input from a delimited (by newline) text file.
 #
 ####################################################################################################
@@ -39,8 +39,9 @@
 #
 #	Version 1.0
 #  	Created by Nick Anderson, JAMF Software, LLC, on May 28, 2014
-# Version 1.1
-#   Fixed to work on Computers and using ID's rather than names
+# 	Version 1.1
+#   	Fixed to work on Computers and using ID's rather than names
+#	Edit by Bram Cohen, JAMF Software, LLC, on November 30, 2017
 #
 ####################################################################################################
 
