@@ -42,7 +42,8 @@
 server="your.jss.server"						        #Server name
 username="admin"								            #JSS username with API privileges
 password="password"								          #Password for the JSS account
-file="/Users/admin/Desktop/Buildings.csv"		#Path to CSV
+operator="localuser"
+file="/Users/$operator/Desktop/Buildings.csv"		#Path to CSV
 
 #Do not modify below this line
 
