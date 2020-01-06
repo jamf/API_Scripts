@@ -39,11 +39,10 @@
 ####################################################################################################
 
 #Declare variables
-server="your.jss.server"						        #Server name
-username="admin"								            #JSS username with API privileges
-password="password"								          #Password for the JSS account
-operator="localuser"
-file="/Users/$operator/Desktop/Buildings.csv"		#Path to CSV
+server="site.jamfcloud.com"				        #Server name
+username="admin"					        #JSS username with API privileges
+password="topsecret"			           		#Password for the JSS account
+file="/Users/$(whoami)/Desktop/bldgsfull.csv"		        #Path to CSV
 
 #Do not modify below this line
 
@@ -53,6 +52,10 @@ b="</name></building>"
 
 #Count the number of entries in the file so we know how many buildings to submit
 count=`cat ${file} | awk -F, '{print NF}'`
+if [[ $count =~ ^-?[0-9]+$ ]]; then
+   echo "count is greater than 400 or something is wrong with file"
+   exit 1
+fi
 
 #Set a variable to start counting how many buildings we've submitted
 index="0"
@@ -70,7 +73,7 @@ do
 	echo "${a}${var}${b}" > /tmp/test.xml
 	
 	#Submit the data to the JSS via the API
-	curl -k -v -u ${username}:${password} https://${server}:8443/JSSResource/buildings/id/0 -T "/tmp/test.xml" -X POST
+	curl -k -v -u ${username}:${password} https://${server}/JSSResource/buildings/id/0 -T "/tmp/test.xml" -X POST
 done
 
 #Clean up the temporary XML file
