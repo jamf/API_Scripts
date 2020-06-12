@@ -30,25 +30,19 @@
 #
 # DESCRIPTION
 #
-#	This script reads a CSV of buildings and imports them via the JSS API.  This will 
-#	import incorrectly if your building name actually includes a comma in the name.
+#	This script reads a CSV of buildings and imports them via the JSS API.  This script 
+#	expects each building name to be on it's own line within the CSV file.
 #
-#	This can be easily adapted to import departments simply by changing the variables
-#	to reference the department tag instead of building as well as the URL on line 72.
 #
 ####################################################################################################
 
 #Declare variables
-server="your.jss.server"						        #Server name
-username="admin"								            #JSS username with API privileges
-password="password"								          #Password for the JSS account
-file="/Users/admin/Desktop/Buildings.csv"		#Path to CSV
+server="yourJSS.jamfcloud.com"						        #Server name and port
+username="admin"								#JSS username with API privileges
+password="password"								#Password for the JSS account
+file="/Users/admin/Desktop/Buildings.csv"					#Path to CSV
 
 #Do not modify below this line
-
-#Variables used to create the XML
-a="<building><name>"
-b="</name></building>"
 
 #Count the number of entries in the file so we know how many buildings to submit
 count=`cat ${file} | awk -F, '{print NF}'`
@@ -57,22 +51,9 @@ count=`cat ${file} | awk -F, '{print NF}'`
 index="0"
 
 #Loop through the building names and submit to the JSS until we've reached the end of the CSV
-while [ $index -lt ${count} ] 
-do
-	#Increment our counter by 1 for each execution
-	index=$[$index+1]
-	
-	#Set a variable to read the next entry in the CSV
-	var=`cat ${file} | awk -F, '{print $'"${index}"'}'`
-	
-	#Output the data and XML to a file
-	echo "${a}${var}${b}" > /tmp/test.xml
-	
-	#Submit the data to the JSS via the API
-	curl -k -v -u ${username}:${password} https://${server}:8443/JSSResource/buildings/id/0 -T "/tmp/test.xml" -X POST
-done
-
-#Clean up the temporary XML file
-rm /tmp/test.xml
+while IFS= read -r line || [ -n "$line" ]; do
+	echo "<building><name>${line}</name></building>"
+	curl -u ${username}:${password} -H "Content-Type: text/xml" https://${server}/JSSResource/buildings/id/0 -d "<building><name>${line}</name></building>" -X POST
+done < $file
 
 exit 0
