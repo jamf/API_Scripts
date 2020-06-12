@@ -44,12 +44,6 @@ file="/Users/admin/Desktop/Buildings.csv"					#Path to CSV
 
 #Do not modify below this line
 
-#Count the number of entries in the file so we know how many buildings to submit
-count=`cat ${file} | awk -F, '{print NF}'`
-
-#Set a variable to start counting how many buildings we've submitted
-index="0"
-
 #Loop through the building names and submit to the JSS until we've reached the end of the CSV
 while IFS= read -r line || [ -n "$line" ]; do
 	echo "<building><name>${line}</name></building>"
