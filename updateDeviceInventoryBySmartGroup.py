@@ -1,8 +1,154 @@
 #!/usr/bin/python
-# -*- coding: utf-8 -*-
+​
+# Script to send remote MDM commands to managed devices via Jamf Pro API
+# Please see end of script for license information
+​
+import requests
+import time
+​
+jss_url = "https://your.jamfcloud.com"  # include :<port> if other than 443, omit trailing /
+api_user = "api"
+api_pass = "apiusrpass"
+​
+# This next setting requires some thought. Jamf's API swagger docs suggest sending
+# remote commands to one device at a time, not to a big list. That's because if
+# you send a command to a list and one of the device IDs doesn't exist, the whole
+# command fails. Also, if you set this too high, you can create a thundering herd
+# of device checkins. Also, you have to think about network. Like if you tell 10K
+# devices to update iOS at the same time, your network admin will not be happy
+# with you. On the other hand, if you have to do something to thousands of devices,
+# one at a time may be way too slow.
+number_of_devices_per_batch = 10
+​
+seconds_between_batches = 1  # Delay between batches
+kind_of_group = "computer"  # "computer" or "mobiledevice"
+group_name = "All Managed Mac"
+remote_mdm_command_to_send = "BlankPush"
+​
+# Remote Commands for Mobile Devices groups:
+# Commands supported: Settings, EraseDevice, ClearPasscode, UnmanageDevice,
+# UpdateInventory, ClearRestrictionsPassword, SettingsEnableDataRoaming,
+# SettingsDisableDataRoaming, SettingsEnableVoiceRoaming,
+# SettingsDisableVoiceRoaming, SettingsEnableAppAnalytics,
+# SettingsDisableAppAnalytics, SettingsEnableDiagnosticSubmission,
+# SettingsDisableDiagnosticSubmission, SettingsEnableBluetooth,
+# SettingsDisableBluetooth (iOS 11.3+ and supervised only),
+# SettingsEnablePersonalHotspot, SettingsDisablePersonalHotspot, BlankPush,
+# ShutDownDevice (supervised only), RestartDevice (supervised only),
+# PasscodeLockGracePeriod (shared iPad only), EnableLostMode (supervised only),
+# DisableLostMode (supervised and in lost mode only), DeviceLocation (supervised
+# and in lost mode only), PlayLostModeSound (supervised and in lost mode only)
+​
+# Remote Commands for Computer groups:
+# Commands supported: UnmanageDevice, BlankPush, SettingsEnableBluetooth,
+# SettingsDisableBluetooth (macOS 10.13.4 and later), EnableRemoteDesktop (macOS 10.14.4 and later),
+# DisableRemoteDesktop (macOS 10.14.4 and later), ScheduleOSUpdate.
+​
+​
+def send_api_request(my_url, my_api_user, my_api_pass, my_method="GET", response_format='json', xml=''):
+    print(f"[debug][send_api_request][start] {my_method} : {my_url}")
+    response_format_header = {'Accept': 'text/xml'} if response_format == "xml" else {'Accept': 'application/json'}
+    try:
+        if my_method == "POST":
+            r = requests.post(my_url, headers=response_format_header, auth=(api_user, api_pass), data=xml)
+        elif my_method == "PUT":
+            r = requests.put(my_url, headers=response_format_header, auth=(api_user, api_pass), data=xml)
+        elif my_method == "DELETE":
+            r = requests.delete(my_url, headers=response_format_header, auth=(api_user, api_pass))
+        elif my_method == "GET":
+            r = requests.get(my_url, headers=response_format_header, auth=(api_user, api_pass))
+        else:
+            raise SystemExit("An unhandled HTTP Method was requested.")
+        r.raise_for_status()
+        return r
+    except requests.exceptions.HTTPError as e:
+        # print("Http Error:", e)
+        # print(f"Request failed with error code - {r.status_code}")
+        if r.status_code == 401:
+            print('HTTP Error 401 : Authentication failed. Check your JSS credentials and permissions.')
+        elif r.status_code == 404:
+            print('HTTP Error 404 : The JSS could not find the resource you were requesting. Check the URL.')
+        else:
+            print(r.status_code)
+            print(r.text)
+            print(r.reason)
+        return
+    except requests.exceptions.Timeout:
+        print("HTTP Timeout")
+        # Maybe set up for a retry, or continue in a retry loop
+    except requests.exceptions.TooManyRedirects:
+        print("HTTP Error - Too many redirects")
+        # Tell the user their URL was bad and try a different one
+    except requests.exceptions.RequestException as e:
+        print("HTTP error")
+        # catastrophic error. bail.
+        raise SystemExit(e)
+​
+​
+def get_group_id_from_name(my_jss_url, my_api_user, my_api_pass, my_kind_of_group, my_group_name):
+    print(f"[debug][get_group_id_from_name][start] Getting ID for {my_kind_of_group} group {my_group_name}")
+    group_name_urlencoded = requests.utils.quote(my_group_name)
+    if my_kind_of_group == "computer":
+        api_endpoint = f"{my_jss_url}/JSSResource/computergroups/name/{group_name_urlencoded}"
+    elif my_kind_of_group == "mobiledevice":
+        api_endpoint = f"{my_jss_url}/JSSResource/computergroups/name/{group_name_urlencoded}"
+    else:
+        raise SystemExit("Invalid my_kind_of_group parameter.")
+    api_response = send_api_request(api_endpoint, my_api_user, my_api_pass)
+    if api_response:
+        group_id = api_response.json()['computer_group']['id']
+        print(f"[debug][get_group_id_from_name] The group id is {group_id}")
+        return group_id
+    else:
+        raise SystemExit("[error][exit] Could not locate the requested group. I'm giving up.")
+​
+​
+def get_group_members(my_jss_url, my_api_user, my_api_pass, my_kind_of_group, my_group_name):
+    print(f"[debug][getComputerGroupMembers][start] Getting members of {my_kind_of_group} group \"{my_group_name}\"")
+    group_id_str = get_group_id_from_name(my_jss_url, my_api_user, my_api_pass, my_kind_of_group, my_group_name)
+    if my_kind_of_group == "computer":
+        api_endpoint = f"{my_jss_url}/JSSResource/computergroups/id/{group_id_str}"
+    elif my_kind_of_group == "mobiledevice":
+        api_endpoint = f"{my_jss_url}/JSSResource/computergroups/id/{group_id_str}"
+    else:
+        raise SystemExit("Invalid group type parameter. Should be \"computer\" or \"mobiledevice\"")
+    api_response = send_api_request(api_endpoint, my_api_user, my_api_pass)
+    if api_response:
+        if my_kind_of_group == "computer":
+            members_json = api_response.json()['computer_group']['computers']
+        elif my_kind_of_group == "mobiledevice":
+            members_json = api_response.json()['mobile_device_group']['mobile_devices']
+        else:
+            raise SystemExit("Invalid group type parameter. Should be \"computer\" or \"mobiledevice\"")
+        my_computer_group_member_ids = []
+        for member in members_json:
+            if "id" in member:
+                my_computer_group_member_ids.append(str(member["id"]))
+        return my_computer_group_member_ids
+​
+​
+def send_mdm_command(my_jss_url, my_api_user, my_api_pass, my_kind_of_group, my_remote_mdm_command_to_send, my_device_id_batch):
+    print(
+        f"[send_mdm_command][start] Sending {my_remote_mdm_command_to_send} command to {my_kind_of_group} ids {my_device_id_batch}")
+    id_range_as_str = ','.join(my_device_id_batch)
+    url = f"{my_jss_url}/JSSResource/{my_kind_of_group}commands/command/{my_remote_mdm_command_to_send}/id/{id_range_as_str}"
+    push_response = send_api_request(url, my_api_user, my_api_pass, "POST")
+    reason = "Command request sent to Jamf Pro" if push_response.status_code == 201 else push_response.reason
+    print(f"[main][result] {push_response.status_code} : {reason}")
+​
+​
+if __name__ == '__main__':
+    group_member_ids = get_group_members(jss_url, api_user, api_pass, kind_of_group, group_name)
+    # print(group_member_ids)
+    for i in range(0, len(group_member_ids), number_of_devices_per_batch):
+        device_id_batch = group_member_ids[i:i + number_of_devices_per_batch]
+        send_mdm_command(jss_url, api_user, api_pass, kind_of_group, remote_mdm_command_to_send, device_id_batch)
+        time.sleep(seconds_between_batches)
+​
+​
 ####################################################################################################
 #
-# Copyright (c) 2015, JAMF Software, LLC.  All rights reserved.
+# Copyright (c) 2021, JAMF Software, LLC.  All rights reserved.
 #
 #       Redistribution and use in source and binary forms, with or without
 #       modification, are permitted provided that the following conditions are met:
@@ -30,148 +176,32 @@
 #
 # SUPPORT FOR THIS PROGRAM
 #
-#       This program is distributed "as is" by JAMF Software, LLC.
+#       This program is distributed "as is".
 #
 ####################################################################################################
 #
 # ABOUT THIS PROGRAM
 #
 # NAME
-#    updateDeviceInventoryBySmartGroup.py -- Update Mobile Device Inventory By Smart Group Membership
+#    JamfProAPIMassActionOnGroup.py.py -- Send mdm commands to a group of devices
 #
 # SYNOPSIS
-#    /usr/bin/python updateDeviceInventoryBySmartGroup.py
+#    /usr/bin/python JamfProAPIMassActionOnGroup.py
 #    
-# DESCRIPTION
-#    This script was designed to update all mobile device inventory in a JSS Smart Group.
-#
-#    For the script to function properly, users must be running the JSS version 7.31 or later and
-#    the account provided must have API privileges to "READ" and "UPDATE" mobile devices in the JSS.
+# REQUIREMENTS
+#    A version of Jamf Pro exposing the Classic API.  
+#    A Static or Smart group containing the target devices.
+#    An API user that has permission to read group membership and send remote commands.
+#    Set the API User/Password, Group Name, and desired command variables at the top of the script.
 #
 ####################################################################################################
 #
 # HISTORY
 #
-#    Version: 1.0
+#    Version: 1.0/ol
 #
-#    - Created by Nick Amundsen on June 23, 2011
-#    - Updated by Bram Cohen on March 19, 2015
-#       Added TLSv1 and new JSON Response on 9.6+
+#    - Adapted previous version by Nick and Bram to...
+#       - Use py3 with requests
+#       - Command configurable with user var
+#       - Support for computers or mobile devices
 #
-#    - Forked by Bram Cohen on April 27, 2015
-#       - Chanaged to target groups instead of all devices
-#
-#####################################################################################################
-#
-# DEFINE VARIABLES & READ IN PARAMETERS
-#
-#####################################################################################################
-#
-# HARDCODED VALUES SET HERE
-#
-jss_host = "" #Example: "www.company.com" for a JSS at https://www.company.com:8443/jss
-jss_port = "" #Example: "8443" for a JSS at https://www.company.com:8443/jss
-jss_path = "" #Example: "jss" for a JSS at https://www.company.com:8443/jss
-jss_username = "" #Example: Admin
-jss_password = "" #Example: Password
-jss_smart_group_id= "" #Example: "1"
-
-##DONT EDIT BELOW THIS LINE
-import sys 
-import json
-import httplib
-import base64
-import urllib2
-import ssl
-import socket
-
-##Computer Object Definition
-class Device:
-    id = -1
-
-##Check variable
-def verifyVariable(name, value):
-    if value == "":
-        print "Error: Please specify a value for variable \"" + name + "\""
-        sys.exit(1)
-
-## the main function.
-def main():
-    verifyVariable("jss_host",jss_host)
-    verifyVariable("jss_port",jss_port)
-    verifyVariable("jss_username",jss_username)
-    verifyVariable("jss_password",jss_password)
-    devices=grabDeviceIDs()
-    updateDeviceInventory(devices)
-
-##Grab and parse the mobile devices and return them in an array.
-def grabDeviceIDs():
-    devices=[];
-    ## parse the list
-    for deviceListJSON in (getDeviceListFromJSS()["mobile_device_group"]["mobile_devices"]):
-        d = Device()
-        d.id = deviceListJSON.get("id")
-        devices.append(d)  
-    print "Found " + str(len(devices)) + " devices."
-    return devices
-
-##Create a header for the request
-def getAuthHeader(u,p):
-    # Compute base64 representation of the authentication token.
-    token = base64.b64encode('%s:%s' % (u,p))
-    return "Basic %s" % token
-
-##Download a list of all mobile devices from the JSS API
-def getDeviceListFromJSS():
-    print "Getting device list from the JSS..."
-    headers = {"Authorization":getAuthHeader(jss_username,jss_password),"Accept":"application/json"}
-    try:
-        conn = httplib.HTTPSConnection(jss_host,jss_port)
-        sock = socket.create_connection((conn.host, conn.port), conn.timeout, conn.source_address)
-        conn.sock = ssl.wrap_socket(sock, conn.key_file, conn.cert_file, ssl_version=ssl.PROTOCOL_TLSv1)
-        conn.request("GET",jss_path + "/JSSResource/mobiledevicegroups/id/" + jss_smart_group_id,None,headers)
-        data = conn.getresponse().read()
-        conn.close()
-        return json.loads(data)
-    except httplib.HTTPException as inst:
-        print "Exception: %s" % inst
-        sys.exit(1)
-    except ValueError as inst:
-        print "Exception decoding JSON: %s" % inst
-        sys.exit(1)
-
-##Submit the command to update a device's inventory to the JSS
-def updateDeviceInventory(devices):
-    print "Updating Devices Inventory..."
-    ##Parse through each device and submit the command to update inventory
-    for index, device in enumerate(devices):
-        percent = "%.2f" % (float(index) / float(len(devices)) * 100)
-        print str(percent) + "% Complete -"
-        submitDataToJSS(device)
-    print "100.00% Complete"
-
-##Update data for a single device
-def submitDataToJSS(Device):
-    print "\tSubmitting command to update device id " +  str(Device.id) + "..."
-    try:
-        url = "https://" + str(jss_host) + ":" + str(jss_port) + str(jss_path) + "/JSSResource/mobiledevices/id/" + str(Device.id)
-        #Write out the XML string with new data to be submitted
-        newDataString = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?><mobile_device><command>UpdateInventory</command></mobile_device>"
-        #print "Data Sent: " + newDataString
-        opener = urllib2.build_opener(urllib2.HTTPHandler)
-        request = urllib2.Request(url,newDataString)
-        request.add_header("Authorization", getAuthHeader(jss_username,jss_password))
-        request.add_header('Content-Type', 'application/xml')
-        request.get_method = lambda: 'PUT'
-        opener.open(request)
-    except httplib.HTTPException as inst:
-        print "\tException: %s" % inst
-    except ValueError as inst:
-        print "\tException submitting PUT XML: %s" % inst
-    except urllib2.HTTPError as inst:
-        print "\tException submitting PUT XML: %s" % inst
-    except:
-        print "\tUnknown error submitting PUT XML."
-
-## Code starts executing here. Just call main.
-main()
